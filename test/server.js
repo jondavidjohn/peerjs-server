@@ -98,16 +98,15 @@ describe('PeerServer', function() {
       p = new PeerServer({ port: 8000 });
 
       var fake = {ip: '0.0.0.0'};
-      p._ips[fake.ip] = 1;
-      p._clients['peerjs'] = {};
-      p._clients['peerjs']['test'] = fake;
+      p._ips.set(fake.ip, 1);
+      p._clients.set('peerjs', {test: fake});
     });
 
     it('should decrement the number of ips being used and remove the connection', function() {
-      expect(p._ips['0.0.0.0']).to.be(1);
+      expect(p._ips.get('0.0.0.0')).to.be(1);
       p._removePeer('peerjs', 'test');
-      expect(p._ips['0.0.0.0']).to.be(0);
-      expect(p._clients['peerjs']['test']).to.be(undefined);
+      expect(p._ips.get('0.0.0.0')).to.be(0);
+      expect(p._clients.get('peerjs')['test']).to.be(undefined);
     });
   });
 
@@ -118,21 +117,23 @@ describe('PeerServer', function() {
     before(function() {
       PeerServer.prototype._initializeHTTP = sinon.stub();
       p = new PeerServer({ port: 8000 });
-      p._clients[KEY] = {};
+      p._clients.set(KEY, {});
     });
 
     it('should send to the socket when appropriate', function() {
       var send = sinon.spy();
       var write = sinon.spy();
       var message = {dst: ID};
-      p._clients[KEY][ID] = {
+      var keySpace = p._clients.get(KEY);
+      keySpace[ID] = {
         socket: {
           send: send
         },
         res: {
           write: write
         }
-      }
+      };
+      p._clients.set(KEY, keySpace);
       p._handleTransmission(KEY, message);
       expect(send.calledWith(JSON.stringify(message))).to.be(true);
       expect(write.calledWith(JSON.stringify(message))).to.be(false);
@@ -141,11 +142,13 @@ describe('PeerServer', function() {
     it('should write to the response with a newline when appropriate', function() {
       var write = sinon.spy();
       var message = {dst: ID};
-      p._clients[KEY][ID] = {
+      var keySpace = p._clients.get(KEY);
+      keySpace[ID] = {
         res: {
           write: write
         }
-      }
+      };
+      p._clients.set(KEY, keySpace);
       p._handleTransmission(KEY, message);
       expect(write.calledWith(JSON.stringify(message) + '\n')).to.be(true);
     });
@@ -153,28 +156,28 @@ describe('PeerServer', function() {
     // no destination.
     it('should push to outstanding messages if the destination is not found', function() {
       var message = {dst: ID};
-      p._outstanding[KEY] = {};
-      p._clients[KEY] = {};
+      p._outstanding.set(KEY, {});
+      p._clients.set(KEY, {});
       p._handleTransmission(KEY, message);
-      expect(p._outstanding[KEY][ID][0]).to.be(message);
+      expect(p._outstanding.get(KEY)[ID][0]).to.be(message);
     });
 
     it('should not push to outstanding messages if the message is a LEAVE or EXPIRE', function() {
       var message = {dst: ID, type: 'LEAVE'};
-      p._outstanding[KEY] = {};
-      p._clients[KEY] = {};
+      p._outstanding.set(KEY, {});
+      p._clients.set(KEY, {});
       p._handleTransmission(KEY, message);
-      expect(p._outstanding[KEY][ID]).to.be(undefined);
+      expect(p._outstanding.get(KEY)[ID]).to.be(undefined);
 
       message = {dst: ID, type: 'EXPIRE'};
       p._handleTransmission(KEY, message);
-      expect(p._outstanding[KEY][ID]).to.be(undefined);
+      expect(p._outstanding.get(KEY)[ID]).to.be(undefined);
     });
 
     it('should remove the peer if there is no dst in the message', function() {
       var message = {type: 'LEAVE'};
       p._removePeer = sinon.spy();
-      p._outstanding[KEY] = {};
+      p._outstanding.set(KEY, {});
       p._handleTransmission(KEY, message);
       expect(p._removePeer.calledWith(KEY, undefined)).to.be(true);
     });
@@ -184,15 +187,17 @@ describe('PeerServer', function() {
       var message = {dst: ID};
       var leaveMessage = {type: 'LEAVE', dst: undefined, src: ID};
       var oldHandleTransmission = p._handleTransmission;
+      var keySpace = p._clients.get(KEY);
       p._removePeer = function() {
         // Hacks!
         p._handleTransmission = sinon.spy();
       };
-      p._clients[KEY][ID] = {
+      keySpace[ID] = {
         socket: {
           send: send
         }
-      }
+      };
+      p._clients.set(KEY, keySpace);
       p._handleTransmission(KEY, message);
       expect(p._handleTransmission.calledWith(KEY, leaveMessage)).to.be(true);
     });
